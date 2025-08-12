@@ -24,6 +24,7 @@
       </div>
       <p id="status" style="margin-top: 8px; font-size: 14px;"></p>
       <div id="tokens" style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px;"></div>
+      <div id="details" class="card" style="margin-top:12px; display:none;"></div>
     </div>
 
     <script>
@@ -35,6 +36,32 @@
 
       const statusEl = document.getElementById('status');
       const textEl = document.getElementById('text');
+
+      function detectLang(s){
+        const hasRu = /[А-Яа-яЁё]/.test(s);
+        const hasEn = /[A-Za-z]/.test(s);
+        if (hasRu && !hasEn) return 'ru';
+        if (hasEn && !hasRu) return 'en';
+        return 'auto';
+      }
+
+      async function translateQuick(word){
+        const lang = detectLang(word);
+        let from='en', to='ru';
+        if (lang==='ru') { from='ru'; to='en'; }
+        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(word)}&langpair=${from}|${to}`;
+        try {
+          const r = await fetch(url);
+          const j = await r.json();
+          return j?.responseData?.translatedText || '';
+        } catch { return ''; }
+      }
+
+      function showDetails(html){
+        const box = document.getElementById('details');
+        box.style.display = 'block';
+        box.innerHTML = html;
+      }
 
       function renderTokens(text) {
         const container = document.getElementById('tokens');
@@ -48,11 +75,12 @@
           span.style.borderRadius = '6px';
           span.style.border = '1px solid #ccc';
           span.style.cursor = 'pointer';
-          span.onclick = () => {
-            try {
-              tg?.sendData(JSON.stringify({ type: 'lookup', text: p }));
-              statusEl.textContent = `Запрос по слову: ${p}`;
-            } catch (e) { statusEl.textContent = 'Ошибка отправки: ' + e; }
+          span.onclick = async () => {
+            statusEl.textContent = `Перевод: ${p} ...`;
+            const tr = await translateQuick(p);
+            statusEl.textContent = '';
+            const safe = (x)=>x.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            showDetails(`<div><b>${safe(p)}</b><br/>${safe(tr || 'Перевод не найден')}</div>`);
           };
           container.appendChild(span);
         });
