@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Smart Translate</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+      :root {
+        --bg: var(--tg-theme-bg-color, #0f1115);
+        --fg: var(--tg-theme-text-color, #e6e6e6);
+        --muted: #9aa4ad;
+        --primary: var(--tg-theme-button-color, #2ea44f);
+        --primary-text: var(--tg-theme-button-text-color, #fff);
+        --card: var(--tg-theme-secondary-bg-color, #1a1d24);
+        --accent: #00bcd4;
+        --danger: #ff5252;
+        --shadow: 0 10px 30px rgba(0,0,0,.25);
+        --radius: 14px;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--fg); font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+      .wrap { max-width: 860px; margin: 0 auto; padding: 16px; }
+      header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+      .title { font-weight: 700; letter-spacing: .2px; }
+      .controls { display: flex; gap: 8px; align-items: center; }
+      .seg { display: inline-flex; background: #0d0f13; border: 1px solid #222833; border-radius: 999px; padding: 4px; box-shadow: var(--shadow); }
+      .seg button { border: 0; background: transparent; color: var(--muted); padding: 8px 14px; border-radius: 999px; cursor: pointer; transition: all .2s ease; }
+      .seg button.active { background: var(--primary); color: var(--primary-text); }
+      .card { background: linear-gradient(180deg, #151922, #0f131a); border: 1px solid #1f2632; border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow); }
+      .input-area { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-bottom: 14px; }
+      textarea { resize: vertical; min-height: 82px; max-height: 40vh; width: 100%; background: var(--card); color: var(--fg); border: 1px solid #263040; border-radius: var(--radius); padding: 12px 14px; outline: none; transition: border-color .2s; }
+      textarea:focus { border-color: var(--accent); }
+      .btn { border: 0; background: var(--primary); color: var(--primary-text); padding: 12px 16px; border-radius: 12px; font-weight: 600; cursor: pointer; box-shadow: var(--shadow); transition: transform .08s ease; }
+      .btn:active { transform: translateY(1px); }
+      .chat { display: grid; gap: 12px; }
+      .bubble { border-radius: 16px; padding: 12px 14px; max-width: 100%; animation: pop .18s ease; }
+      .bubble.you { background: #11161f; border: 1px solid #1f2733; }
+      .bubble.bot { background: #101a15; border: 1px solid #1d2b23; }
+      @keyframes pop { from{ transform: scale(.98); opacity: .0 } to { transform: scale(1); opacity: 1 } }
+      .tokens { display: flex; flex-wrap: wrap; gap: 8px; }
+      .token { display: inline-flex; align-items: center; gap: 6px; background: #0e131a; border: 1px solid #1e2735; color: var(--fg); padding: 8px 10px; border-radius: 10px; cursor: pointer; transition: all .15s ease; }
+      .token:hover { border-color: var(--accent); box-shadow: 0 6px 18px rgba(0, 188, 212, .12); transform: translateY(-1px); }
+      .punct { opacity: .7; cursor: default; }
+      .panel { margin-top: 8px; border-radius: 12px; padding: 12px; background: #0f141b; border: 1px solid #202a36; display: none; }
+      .panel h4 { margin: 0 0 6px; font-size: 14px; color: var(--muted); font-weight: 600; }
+      .panel .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .panel .tr { font-size: 16px; font-weight: 600; }
+      .fade { transition: opacity .2s ease; }
+      .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #0c1117; border: 1px solid #1f2733; padding: 2px 6px; border-radius: 6px; color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div class="title">Smart Translate</div>
+        <div class="controls">
+          <div class="seg" id="dir">
+            <button data-dir="en-ru" class="active">EN → RU</button>
+            <button data-dir="ru-en">RU → EN</button>
+          </div>
+        </div>
+      </header>
+
+      <div class="card input-area">
+        <textarea id="input" placeholder="Напишите фразу для интерактивного перевода..."></textarea>
+        <button class="btn" id="renderBtn">Отобразить</button>
+      </div>
+
+      <div class="chat" id="chat"></div>
+    </div>
+
+    <script>
+      const tg = window.Telegram?.WebApp; tg?.ready(); tg?.expand();
+
+      const input = document.getElementById('input');
+      const chat = document.getElementById('chat');
+      const dirEl = document.getElementById('dir');
+      let dir = 'en-ru';
+
+      dirEl.querySelectorAll('button').forEach(b=>{
+        b.onclick = ()=>{ dirEl.querySelectorAll('button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); dir = b.dataset.dir; };
+      });
+
+      document.getElementById('renderBtn').onclick = ()=>{
+        const text = (input.value||'').trim();
+        if(!text) return;
+        renderMessage(text, 'you');
+        input.value='';
+      };
+
+      function tokenize(s){
+        return s.match(/[\p{L}\p{N}\-']+|[\p{P}\p{S}]|\s+/gu) || [];
+      }
+
+      function isWord(tok){ return /[\p{L}\p{N}]/u.test(tok); }
+
+      function createBubble(role){
+        const b = document.createElement('div');
+        b.className = `bubble ${role}`;
+        return b;
+      }
+
+      function createTokensBlock(text){
+        const wrap = document.createElement('div');
+        wrap.className = 'tokens';
+        const tokens = tokenize(text);
+        tokens.forEach(tok=>{
+          if(/\s+/.test(tok)) { const s=document.createElement('span'); s.textContent=tok; wrap.appendChild(s); return; }
+          const btn = document.createElement('span');
+          btn.className = isWord(tok) ? 'token' : 'token punct';
+          btn.textContent = tok;
+          if(isWord(tok)) btn.onclick = ()=>onWordClick(tok, wrap);
+          wrap.appendChild(btn);
+        });
+        return wrap;
+      }
+
+      function renderMessage(text, role='you'){
+        const bubble = createBubble(role);
+        bubble.appendChild(createTokensBlock(text));
+        const panel = document.createElement('div'); panel.className='panel fade'; bubble.appendChild(panel);
+        chat.appendChild(bubble); chat.scrollTop = chat.scrollHeight;
+      }
+
+      async function onWordClick(word, scope){
+        const bubble = scope.parentElement; const panel = bubble.querySelector('.panel');
+        panel.style.display = 'block'; panel.style.opacity = .6; panel.innerHTML = `<h4>Перевод</h4><div class='row'><div class='tr'>…</div><button class='btn' id='speakBtn'>Озвучить</button></div>`;
+        const tr = await translate(word);
+        panel.querySelector('.tr').textContent = tr || 'Перевод не найден';
+        panel.style.opacity = 1;
+        const speakBtn = panel.querySelector('#speakBtn');
+        speakBtn.onclick = ()=>speakWord(word);
+      }
+
+      async function translate(word){
+        const [src, dst] = dir.split('-');
+        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(word)}&langpair=${src}|${dst}`;
+        try {
+          const r = await fetch(url);
+          const j = await r.json();
+          let out = j?.responseData?.translatedText || '';
+          if (!out && Array.isArray(j?.matches) && j.matches.length) out = j.matches[0].translation;
+          return out;
+        } catch { return ''; }
+      }
+
+      function speakWord(word){
+        try {
+          if (!('speechSynthesis' in window)) { alert('TTS не поддерживается'); return; }
+          const utter = new SpeechSynthesisUtterance(word);
+          utter.lang = dir.startsWith('en-') ? 'en-US' : 'ru-RU';
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.speak(utter);
+        } catch (e) { console.warn('TTS error', e); }
+      }
+
+      // Prefill from query params (src/res)
+      try {
+        const url = new URL(location.href);
+        const src = url.searchParams.get('src') || '';
+        if (src) renderMessage(src, 'you');
+        const res = url.searchParams.get('res') || '';
+        if (res) renderMessage(res, 'bot');
+      } catch {}
+    </script>
+  </body>
+  </html>
+
+
