@@ -135,7 +135,17 @@ bot.on('text', async (ctx) => {
       return;
     }
     const corrected = await correctText(userText);
-    await ctx.reply(corrected);
+    if (webAppUrl) {
+      const explainUrl = `${webAppUrl}?src=${encodeURIComponent(userText)}&res=${encodeURIComponent(corrected)}`;
+      await ctx.reply(corrected, {
+        reply_markup: {
+          inline_keyboard: [[{ text: 'Объяснить', web_app: { url: explainUrl } }]],
+        },
+        disable_web_page_preview: true,
+      });
+    } else {
+      await ctx.reply(corrected);
+    }
   } catch (err) {
     console.error(err);
     await ctx.reply('Упс! Что-то пошло не так. Попробуйте ещё раз позже.');
@@ -179,7 +189,17 @@ bot.on('voice', async (ctx) => {
     }
     const corrected = await correctText(transcript);
     const replyText = corrected || transcript || 'Не удалось распознать речь. Попробуйте ещё раз.';
-    await ctx.reply(replyText);
+    if (webAppUrl) {
+      const explainUrl = `${webAppUrl}?src=${encodeURIComponent(transcript)}&res=${encodeURIComponent(corrected)}`;
+      await ctx.reply(replyText, {
+        reply_markup: {
+          inline_keyboard: [[{ text: 'Объяснить', web_app: { url: explainUrl } }]],
+        },
+        disable_web_page_preview: true,
+      });
+    } else {
+      await ctx.reply(replyText);
+    }
   } catch (err) {
     console.error(err);
     await ctx.reply('Не удалось обработать голосовое сообщение. Попробуйте ещё раз позже.');

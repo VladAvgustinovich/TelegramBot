@@ -15,8 +15,8 @@
   </head>
   <body>
     <div class="card">
-      <h3>Telegram Mini App</h3>
-      <p>Это демонстрационная страница. Задайте `WEB_APP_URL` в `.env` у бота, чтобы открыть её из Telegram.</p>
+      <h3>Explain</h3>
+      <p>Страница открыта из бота по кнопке «Объяснить». Ниже исходный и исправленный тексты. Нажимайте на слова для быстрого перевода.</p>
       <textarea id="text" rows="4" placeholder="Введите текст..."></textarea>
       <div style="margin-top: 8px; display: flex; gap: 8px;">
         <button id="send">Отправить в бота</button>
@@ -71,7 +71,24 @@
       };
 
       textEl.addEventListener('input', () => renderTokens(textEl.value));
-      renderTokens('Tap any word to look it up');
+      // Prefill from query params if present (src/res)
+      try {
+        const url = new URL(location.href);
+        const src = url.searchParams.get('src') || '';
+        const res = url.searchParams.get('res') || '';
+        const initial = [
+          src ? `Оригинал: ${src}` : '',
+          res ? `Исправленный: ${res}` : '',
+        ].filter(Boolean).join('\n');
+        if (initial) {
+          textEl.value = initial;
+          renderTokens(initial);
+        } else {
+          renderTokens('Tap any word to look it up');
+        }
+      } catch {
+        renderTokens('Tap any word to look it up');
+      }
 
       document.getElementById('close').onclick = () => tg?.close();
     </script>
