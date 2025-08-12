@@ -62,11 +62,6 @@
         </div>
       </header>
 
-      <div class="card input-area">
-        <textarea id="input" placeholder="Напишите фразу для интерактивного перевода..."></textarea>
-        <button class="btn" id="renderBtn">Отобразить</button>
-      </div>
-
       <div class="chat" id="chat"></div>
     </div>
 
@@ -89,11 +84,28 @@
         input.value='';
       };
 
-      function tokenize(s){
-        return s.match(/[\p{L}\p{N}\-']+|[\p{P}\p{S}]|\s+/gu) || [];
+      function segmentText(text, locale) {
+        // Use Intl.Segmenter when available for word-like detection
+        if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+          const seg = new Intl.Segmenter(locale || 'und', { granularity: 'word' });
+          const parts = Array.from(seg.segment(text)).map(s => ({ text: s.segment, isWord: s.isWordLike }));
+          // Merge hyphenated words: word '-' word => one token
+          const merged = [];
+          for (let i = 0; i < parts.length; i++) {
+            const a = parts[i], b = parts[i + 1], c = parts[i + 2];
+            if (a && b && c && a.isWord && b.text === '-' && c.isWord) {
+              merged.push({ text: a.text + b.text + c.text, isWord: true });
+              i += 2;
+            } else {
+              merged.push(a);
+            }
+          }
+          return merged;
+        }
+        // Fallback: regex segmentation with apostrophes kept inside words
+        const tokens = text.match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)?|[\-–—]|[\p{P}\p{S}]|\s+/gu) || [];
+        return tokens.map(t => ({ text: t, isWord: /[\p{L}\p{N}]/u.test(t) }));
       }
-
-      function isWord(tok){ return /[\p{L}\p{N}]/u.test(tok); }
 
       function createBubble(role){
         const b = document.createElement('div');
@@ -104,13 +116,15 @@
       function createTokensBlock(text){
         const wrap = document.createElement('div');
         wrap.className = 'tokens';
-        const tokens = tokenize(text);
-        tokens.forEach(tok=>{
-          if(/\s+/.test(tok)) { const s=document.createElement('span'); s.textContent=tok; wrap.appendChild(s); return; }
+        const locale = dir.startsWith('en-') ? 'en' : dir.startsWith('ru-') ? 'ru' : 'und';
+        const tokens = segmentText(text, locale);
+        tokens.forEach(({ text: tok, isWord }) => {
+          if (/\s+/u.test(tok)) { const s=document.createElement('span'); s.textContent=tok; wrap.appendChild(s); return; }
+          if (!isWord) { const s=document.createElement('span'); s.textContent=tok; s.className='punct'; wrap.appendChild(s); return; }
           const btn = document.createElement('span');
-          btn.className = isWord(tok) ? 'token' : 'token punct';
+          btn.className = 'token';
           btn.textContent = tok;
-          if(isWord(tok)) btn.onclick = ()=>onWordClick(tok, wrap);
+          btn.onclick = ()=>onWordClick(tok, wrap);
           wrap.appendChild(btn);
         });
         return wrap;
@@ -155,7 +169,7 @@
         } catch (e) { console.warn('TTS error', e); }
       }
 
-      // Prefill from query params (src/res)
+      // Prefill from query params (src/res) and render only those two
       try {
         const url = new URL(location.href);
         const src = url.searchParams.get('src') || '';
