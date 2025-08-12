@@ -23,6 +23,7 @@
         <button id="close">Закрыть</button>
       </div>
       <p id="status" style="margin-top: 8px; font-size: 14px;"></p>
+      <div id="tokens" style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px;"></div>
     </div>
 
     <script>
@@ -35,16 +36,42 @@
       const statusEl = document.getElementById('status');
       const textEl = document.getElementById('text');
 
+      function renderTokens(text) {
+        const container = document.getElementById('tokens');
+        container.innerHTML = '';
+        const parts = (text || '').split(/(\s+)/);
+        parts.forEach(p => {
+          if (!p.trim()) { container.appendChild(document.createTextNode(p)); return; }
+          const span = document.createElement('span');
+          span.textContent = p;
+          span.style.padding = '2px 6px';
+          span.style.borderRadius = '6px';
+          span.style.border = '1px solid #ccc';
+          span.style.cursor = 'pointer';
+          span.onclick = () => {
+            try {
+              tg?.sendData(JSON.stringify({ type: 'lookup', text: p }));
+              statusEl.textContent = `Запрос по слову: ${p}`;
+            } catch (e) { statusEl.textContent = 'Ошибка отправки: ' + e; }
+          };
+          container.appendChild(span);
+        });
+      }
+
       document.getElementById('send').onclick = () => {
         const text = (textEl.value || '').trim();
         if (!text) { statusEl.textContent = 'Введите текст'; return; }
         try {
           tg?.sendData(JSON.stringify({ type: 'text', text }));
           statusEl.textContent = 'Отправлено в бота.';
+          renderTokens(text);
         } catch (e) {
           statusEl.textContent = 'Не удалось отправить: ' + e;
         }
       };
+
+      textEl.addEventListener('input', () => renderTokens(textEl.value));
+      renderTokens('Tap any word to look it up');
 
       document.getElementById('close').onclick = () => tg?.close();
     </script>

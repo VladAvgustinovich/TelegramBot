@@ -51,6 +51,25 @@ async function correctText(text: string): Promise<string> {
   return out || text;
 }
 
+async function lookupWordBrief(query: string): Promise<string> {
+  const prompt = `Ты двуязычный лингвист. Для фразы или слова:
+"${query}"
+Дай краткий вывод в 3–5 строках:
+1) Translation (RU↔EN)
+2) Meaning (кратко)
+3) Examples (2 очень коротких примера)
+Форматируй кратко, без лишних пояснений.`;
+  const completion = await openai.chat.completions.create({
+    model: chatModel,
+    messages: [
+      { role: 'user', content: prompt },
+    ],
+    temperature: 0.2,
+    max_tokens: 256,
+  });
+  return completion.choices[0]?.message?.content?.trim() || '';
+}
+
 bot.start(async (ctx) => {
   await ctx.reply(
     'Привет! Пришли мне текст или голосовое сообщение — я исправлю текст и верну результат.'
@@ -66,6 +85,34 @@ bot.start(async (ctx) => {
         inline_keyboard: [[{ text: 'Open', web_app: { url: webAppUrl } }]],
       },
     });
+  }
+});
+
+// Handle WebApp data (from mini app)
+bot.on('message', async (ctx, next) => {
+  const anyMsg: any = ctx.message as any;
+  const raw = anyMsg?.web_app_data?.data;
+  if (!raw) return next();
+  try {
+    const payload = JSON.parse(raw);
+    if (payload?.type === 'text' && typeof payload.text === 'string') {
+      await ctx.sendChatAction('typing');
+      const text = payload.text.trim();
+      if (!text) return ctx.reply('Пустой текст');
+      const corrected = await correctText(text);
+      return ctx.reply(corrected);
+    }
+    if (payload?.type === 'lookup' && typeof payload.text === 'string') {
+      await ctx.sendChatAction('typing');
+      const word = payload.text.trim();
+      if (!word) return ctx.reply('Пустой запрос');
+      const info = await lookupWordBrief(word);
+      return ctx.reply(info || 'Нет данных');
+    }
+    return ctx.reply('Неподдерживаемый формат данных из WebApp');
+  } catch (e) {
+    console.error('web_app_data parse error', e);
+    return ctx.reply('Не удалось обработать данные мини‑приложения');
   }
 });
 
